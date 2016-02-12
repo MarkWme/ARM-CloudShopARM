@@ -1,0 +1,459 @@
+﻿{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+  "parameters": {
+    "CloudShopStorageType": {
+      "type": "string",
+      "defaultValue": "Standard_LRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_ZRS",
+        "Standard_GRS",
+        "Standard_RAGRS",
+        "Premium_LRS"
+      ]
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "West US",
+      "allowedValues": [
+        "West US",
+        "East US",
+        "North Europe",
+        "West Europe"
+      ]
+    },
+    "CloudShopWebName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "CloudShopWebAdminUserName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "CloudShopWebAdminPassword": {
+      "type": "securestring"
+    },
+    "CloudShopWebWindowsOSVersion": {
+      "type": "string",
+      "defaultValue": "2012-R2-Datacenter",
+      "allowedValues": [
+        "2008-R2-SP1",
+        "2012-Datacenter",
+        "2012-R2-Datacenter",
+        "Windows-Server-Technical-Preview"
+      ]
+    },
+    "CloudShopWebIPDnsName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "_artifactsLocation": {
+      "type": "string",
+      "metadata": {
+        "description": "Auto-generated container in staging storage account to receive post-build staging folder upload"
+      }
+    },
+    "_artifactsLocationSasToken": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Auto-generated token to access _artifactsLocation"
+      }
+    },
+    "hackathonWebPackage": {
+      "type": "string",
+      "defaultValue": "http://opsgilitytraining.blob.core.windows.net/armhackathon/cloudshop.zip"
+    },
+    "CloudShopDBName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "CloudShopDBAdminUserName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "CloudShopDBAdminPassword": {
+      "type": "securestring"
+    },
+    "hackathonSqlVMSKU": {
+      "type": "string",
+      "defaultValue": "Web",
+      "allowedValues": [
+        "Web",
+        "Standard",
+        "Enterprise"
+      ]
+    },
+    "vmSizeSql": {
+      "type": "string",
+      "defaultValue": "Standard_D1",
+      "allowedValues": [
+        "Standard_D1",
+        "Standard_D2",
+        "Standard_D3",
+        "Standard_D4",
+        "Standard_D5"
+      ]
+    }
+  },
+  "variables": {
+    "CloudShopVNetPrefix": "10.0.0.0/16",
+    "CloudShopVNetSubnet1Name": "FrontEndNet",
+    "CloudShopVNetSubnet1Prefix": "10.0.0.0/24",
+    "CloudShopVNetSubnet2Name": "DatabaseNet",
+    "CloudShopVNetSubnet2Prefix": "10.0.1.0/24",
+    "CloudShopStorageName": "[concat('shopstorage', uniqueString(resourceGroup().id))]",
+    "CloudShopWebImagePublisher": "MicrosoftWindowsServer",
+    "CloudShopWebImageOffer": "WindowsServer",
+    "CloudShopWebOSDiskName": "CloudShopWebOSDisk",
+    "CloudShopWebVmSize": "Standard_A1",
+    "CloudShopWebVnetID": "[resourceId('Microsoft.Network/virtualNetworks', 'CloudShopVNet')]",
+    "CloudShopWebSubnetRef": "[concat(variables('CloudShopWebVnetID'), '/subnets/', variables('CloudShopVNetSubnet1Name'))]",
+    "CloudShopWebStorageAccountContainerName": "vhds",
+    "CloudShopWebNicName": "[concat(parameters('CloudShopWebName'), 'NetworkInterface')]",
+    "CloudShopWebIPName": "CloudShopWebIP",
+    "hackathonDSCConfigurationFunction": "hackathonDSCConfiguration.ps1\\Main",
+    "CloudShopDBImagePublisher": "MicrosoftSQLServer",
+    "CloudShopDBImageOffer": "SQL2014SP1-WS2012R2",
+    "CloudShopDBOSDiskName": "CloudShopDBOSDisk",
+    "CloudShopDBVmSize": "Standard_D1",
+    "CloudShopDBVnetID": "[resourceId('Microsoft.Network/virtualNetworks', 'CloudShopVNet')]",
+    "CloudShopDBSubnetRef": "[concat(variables('CloudShopDBVnetID'), '/subnets/', variables('CloudShopVNetSubnet2Name'))]",
+    "CloudShopDBStorageAccountContainerName": "vhds",
+    "CloudShopDBNicName": "[concat(parameters('CloudShopDBName'), 'NetworkInterface')]",
+    "hackathonDSCSQLConfigurationFunction": "hackathonDSCSQLConfiguration.ps1\\Main",
+    "dataDisk1VhdName": "[concat('http://',variables('CloudShopStorageName'),'.blob.core.windows.net/','vhds','/','dataDisk1.vhd')]",
+    "dataDisk2VhdName": "[concat('http://',variables('CloudShopStorageName'),'.blob.core.windows.net/','vhds','/','dataDisk2.vhd')]"
+  },
+  "resources": [
+    {
+      "apiVersion": "2015-05-01-preview",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "name": "hackathonNetworkSecurityGroup",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "webrule",
+            "properties": {
+              "description": "This rule allows traffic in on port 80",
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "destinationPortRange": "80",
+              "sourceAddressPrefix": "INTERNET",
+              "destinationAddressPrefix": "10.0.0.0/24",
+              "access": "Allow",
+              "priority": 100,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "rdprule",
+            "properties": {
+              "description": "This rule allows traffic on port 3389 from the web",
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "destinationPortRange": "3389",
+              "sourceAddressPrefix": "INTERNET",
+              "destinationAddressPrefix": "10.0.0.0/24",
+              "access": "Allow",
+              "priority": 200,
+              "direction": "Inbound"
+            }
+          }
+
+        ]
+      }
+    },
+    {
+      "name": "CloudShopVNet",
+      "type": "Microsoft.Network/virtualNetworks",
+      "location": "[parameters('location')]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkSecurityGroups', 'hackathonNetworkSecurityGroup')]"
+      ],
+      "tags": {
+        "displayName": "CloudShopVNet"
+      },
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[variables('CloudShopVNetPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('CloudShopVNetSubnet1Name')]",
+            "properties": {
+              "addressPrefix": "[variables('CloudShopVNetSubnet1Prefix')]",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'hackathonNetworkSecurityGroup')]"
+              }
+
+            }
+          },
+          {
+            "name": "[variables('CloudShopVNetSubnet2Name')]",
+            "properties": {
+              "addressPrefix": "[variables('CloudShopVNetSubnet2Prefix')]"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[variables('CloudShopStorageName')]",
+      "type": "Microsoft.Storage/storageAccounts",
+      "location": "[parameters('location')]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [ ],
+      "tags": {
+        "displayName": "CloudShopStorage"
+      },
+      "properties": {
+        "accountType": "[parameters('CloudShopStorageType')]"
+      }
+    },
+    {
+      "name": "[variables('CloudShopWebNicName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[parameters('location')]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', 'CloudShopVNet')]",
+        "[concat('Microsoft.Network/publicIPAddresses/', variables('CloudShopWebIPName'))]"
+      ],
+      "tags": {
+        "displayName": "CloudShopWebNic"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('CloudShopWebSubnetRef')]"
+              },
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('CloudShopWebIPName'))]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[parameters('CloudShopWebName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[parameters('location')]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[concat('Microsoft.Storage/storageAccounts/', variables('CloudShopStorageName'))]",
+        "[concat('Microsoft.Network/networkInterfaces/', variables('CloudShopWebNicName'))]"
+      ],
+      "tags": {
+        "displayName": "CloudShopWeb"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('CloudShopWebVmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('CloudShopWebName')]",
+          "adminUsername": "[parameters('CloudShopWebAdminUsername')]",
+          "adminPassword": "[parameters('CloudShopWebAdminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('CloudShopWebImagePublisher')]",
+            "offer": "[variables('CloudShopWebImageOffer')]",
+            "sku": "[parameters('CloudShopWebWindowsOSVersion')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "CloudShopWebOSDisk",
+            "vhd": {
+              "uri": "[concat('http://', variables('CloudShopStorageName'), '.blob.core.windows.net/', variables('CloudShopWebStorageAccountContainerName'), '/', variables('CloudShopWebOSDiskName'), '.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('CloudShopWebNicName'))]"
+            }
+          ]
+        }
+      },
+      "resources": [
+        {
+          "name": "hackathonDSC",
+          "type": "extensions",
+          "location": "[parameters('location')]",
+          "apiVersion": "2015-06-15",
+          "dependsOn": [
+            "[concat('Microsoft.Compute/virtualMachines/', parameters('CloudShopWebName'))]",
+            "[concat('Microsoft.Compute/virtualMachines/', parameters('CloudShopDBName'),'/extensions/hackathonDSCSQL')]"
+          ],
+          "tags": {
+            "displayName": "hackathonDSC"
+          },
+          "properties": {
+            "publisher": "Microsoft.Powershell",
+            "type": "DSC",
+            "typeHandlerVersion": "2.9",
+            "autoUpgradeMinorVersion": true,
+            "settings": {
+              "modulesUrl": "[concat(parameters('_artifactsLocation'), '/', 'dsc.zip')]",
+              "sasToken": "[parameters('_artifactsLocationSasToken')]",
+              "configurationFunction": "[variables('hackathonDSCConfigurationFunction')]",
+              "properties": {
+                "nodeName": "[parameters('CloudShopWebName')]",
+                "webDeployPackage": "[parameters('hackathonWebPackage')]"
+              }
+            },
+            "protectedSettings": { }
+          }
+        }
+      ]
+    },
+    {
+      "name": "[variables('CloudShopWebIPName')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "location": "[parameters('location')]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [ ],
+      "tags": {
+        "displayName": "CloudShopWebIP"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic",
+        "dnsSettings": {
+          "domainNameLabel": "[parameters('CloudShopWebIPDnsName')]"
+        }
+      }
+    },
+    {
+      "name": "[variables('CloudShopDBNicName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[parameters('location')]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', 'CloudShopVNet')]"
+      ],
+      "tags": {
+        "displayName": "CloudShopDBNic"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('CloudShopDBSubnetRef')]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[parameters('CloudShopDBName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[parameters('location')]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[concat('Microsoft.Storage/storageAccounts/', variables('CloudShopStorageName'))]",
+        "[concat('Microsoft.Network/networkInterfaces/', variables('CloudShopDBNicName'))]"
+      ],
+      "tags": {
+        "displayName": "CloudShopDB"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSizeSql')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('CloudShopDBName')]",
+          "adminUsername": "[parameters('CloudShopDBAdminUsername')]",
+          "adminPassword": "[parameters('CloudShopDBAdminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('CloudShopDBImagePublisher')]",
+            "offer": "[variables('CloudShopDBImageOffer')]",
+            "sku": "[parameters('hackathonSqlVMSKU')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "CloudShopDBOSDisk",
+            "vhd": {
+              "uri": "[concat('http://', variables('CloudShopStorageName'), '.blob.core.windows.net/', variables('CloudShopDBStorageAccountContainerName'), '/', variables('CloudShopDBOSDiskName'), '.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          },
+          "dataDisks": [
+            {
+              "name": "datadisk1",
+              "diskSizeGB": "1023",
+              "lun": 0,
+              "vhd": { "uri": "[variables('dataDisk1VhdName')]" },
+              "createOption": "Empty"
+            },
+            {
+              "name": "datadisk2",
+              "diskSizeGB": "1023",
+              "lun": 1,
+              "vhd": { "uri": "[variables('dataDisk2VhdName')]" },
+              "createOption": "Empty"
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('CloudShopDBNicName'))]"
+            }
+          ]
+        }
+      },
+      "resources": [
+        {
+          "name": "hackathonDSCSQL",
+          "type": "extensions",
+          "location": "[parameters('location')]",
+          "apiVersion": "2015-06-15",
+          "dependsOn": [
+            "[concat('Microsoft.Compute/virtualMachines/', parameters('CloudShopDBName'))]"
+          ],
+          "tags": {
+            "displayName": "hackathonDSCSQL"
+          },
+          "properties": {
+            "publisher": "Microsoft.Powershell",
+            "type": "DSC",
+            "typeHandlerVersion": "2.9",
+            "autoUpgradeMinorVersion": true,
+            "settings": {
+              "modulesUrl": "[concat(parameters('_artifactsLocation'), '/', 'dsc.zip')]",
+              "sasToken": "[parameters('_artifactsLocationSasToken')]",
+              "configurationFunction": "[variables('hackathonDSCSQLConfigurationFunction')]",
+              "properties": {
+                "nodeName": "[parameters('CloudShopDBName')]"
+              }
+            },
+            "protectedSettings": { }
+          }
+        }
+      ]
+    }
+  ],
+    "outputs": {
+    }
+}

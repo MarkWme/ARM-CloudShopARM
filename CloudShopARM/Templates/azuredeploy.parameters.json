@@ -1,0 +1,30 @@
+﻿{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "CloudShopWebName": {
+            "value": "mtjwCloudShop"
+        },
+        "CloudShopWebAdminUserName": {
+            "value": "guvnor"
+        },
+        "CloudShopWebIPDnsName": {
+            "value": "mtjwcloudshop"
+        },
+        "CloudShopWebAdminPassword": {
+            "value": "Tsaos!a6"
+        },
+        "CloudShopDBName": {
+            "value": "armsql"
+        },
+        "CloudShopDBAdminUserName": {
+            "value": "demouser"
+        },
+        "CloudShopDBAdminPassword": {
+            "value": "demo@pass1"
+        },
+        "hackathonSqlVMSKU": {
+            "value": "Web"
+        }
+    }
+}
